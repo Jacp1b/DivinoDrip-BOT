@@ -19,7 +19,7 @@ async function connectToWhatsApp() {
     // Si la cuenta no está registrada aún, generamos el código de 8 dígitos
     if (!sock.authState.creds.registered) {
         // Escribe aquí tu número de WhatsApp con código de país (ejemplo Colombia: 57XXXXXXXXXX)
-        const phoneNumber = '573001234567'; 
+        const phoneNumber = '573114460450'; 
         
         setTimeout(async () => {
             try {
