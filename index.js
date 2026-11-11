@@ -1,5 +1,6 @@
 const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const express = require('express');
+const path = require('node:path');
 
 const app = express();
 app.use(express.json());
@@ -7,62 +8,82 @@ app.use(express.json());
 let sock;
 let isWhatsAppConnected = false;
 let reconnectTimer;
+let isConnecting = false;
 
 async function connectToWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
-    
-    const currentSocket = makeWASocket({
-        auth: state,
-        printQRInTerminal: false,
-        browser: ['Ubuntu', 'Chrome', '22.04.4'],
-        syncFullHistory: false,
-        markOnlineOnConnect: true,
-        generateHighQualityLinkPreview: false,
-        // Evita que los fallos de sesión de libsignal rompan el flujo
-        getMessage: async (key) => {
-            return { conversation: 'Mensaje automático Divino Drip' };
+    if (isConnecting) return;
+    isConnecting = true;
+
+    try {
+        const authDirectory = process.env.BAILEYS_AUTH_DIR
+            || path.join(__dirname, 'auth_info_baileys');
+        const { state, saveCreds } = await useMultiFileAuthState(authDirectory);
+
+        const currentSocket = makeWASocket({
+            auth: state,
+            printQRInTerminal: false,
+            browser: ['Ubuntu', 'Chrome', '22.04.4'],
+            syncFullHistory: false,
+            markOnlineOnConnect: true,
+            generateHighQualityLinkPreview: false
+        });
+        sock = currentSocket;
+
+        currentSocket.ev.on('creds.update', saveCreds);
+
+        if (!state.creds.registered) {
+            const phoneNumber = '573114460450';
+
+            setTimeout(async () => {
+                if (sock !== currentSocket || state.creds.registered) return;
+                try {
+                    const code = await currentSocket.requestPairingCode(phoneNumber);
+                    console.log('==============================================');
+                    console.log(`TU CÓDIGO DE VINCULACIÓN ES: ${code}`);
+                    console.log('==============================================');
+                } catch (err) {
+                    console.error('Error al solicitar código de vinculación:', err);
+                }
+            }, 3000);
         }
-    });
-    sock = currentSocket;
 
-    currentSocket.ev.on('creds.update', saveCreds);
-
-    // Si la cuenta no está registrada aún, generamos el código de 8 dígitos por consola
-    if (!currentSocket.authState.creds.registered) {
-        const phoneNumber = '573114460450'; // Tu número configurado
-        
-        setTimeout(async () => {
-            try {
-                const code = await currentSocket.requestPairingCode(phoneNumber);
-                console.log('==============================================');
-                console.log(`TU CÓDIGO DE VINCULACIÓN ES: ${code}`);
-                console.log('==============================================');
-            } catch (err) {
-                console.error('Error al solicitar código de vinculación:', err);
+        currentSocket.ev.on('connection.update', (update) => {
+            const { connection, lastDisconnect } = update;
+            if (connection === 'close') {
+                if (sock === currentSocket) {
+                    sock = undefined;
+                    isWhatsAppConnected = false;
+                }
+                const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+                console.log('Conexión cerrada. Reconectando:', shouldReconnect);
+                if (shouldReconnect && !reconnectTimer) {
+                    reconnectTimer = setTimeout(() => {
+                        reconnectTimer = undefined;
+                        connectToWhatsApp().catch((error) => {
+                            console.error('Error al reconectar con WhatsApp:', error);
+                        });
+                    }, 5000);
+                }
+            } else if (connection === 'open') {
+                isWhatsAppConnected = true;
+                console.log('¡Conectado exitosamente a WhatsApp con Baileys!');
             }
-        }, 3000);
+        });
+    } finally {
+        isConnecting = false;
     }
-
-    currentSocket.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
-        if (connection === 'close') {
-            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('Conexión cerrada. Reconectando:', shouldReconnect);
-            isWhatsAppConnected = false;
-            if (shouldReconnect) {
-                if (reconnectTimer) clearTimeout(reconnectTimer);
-                reconnectTimer = setTimeout(() => connectToWhatsApp(), 5000);
-            }
-        } else if (connection === 'open') {
-            console.log('¡Conectado exitosamente a WhatsApp com Baileys!');
-            isWhatsAppConnected = true;
-        }
-    });
 }
 
+app.get('/health', (req, res) => {
+    res.status(isWhatsAppConnected ? 200 : 503).json({
+        status: isWhatsAppConnected ? 'connected' : 'disconnected'
+    });
+});
+
 app.post('/send-message', async (req, res) => {
-    const { number, message } = req.body; 
-    if (!number || !message) {
+    const { number, message } = req.body;
+    if (typeof number !== 'string' || !/^\d{10,15}$/.test(number)
+        || typeof message !== 'string' || message.trim() === '') {
         return res.status(400).json({ status: 'error', error: 'Faltan parámetros' });
     }
     if (!isWhatsAppConnected || !sock) {
@@ -70,15 +91,7 @@ app.post('/send-message', async (req, res) => {
     }
     try {
         const id = `${number}@s.whatsapp.net`;
-        
-        // Simular presencia y asegurar sincronización de llaves E2EE para evitar cifrados
-        await sock.presenceSubscribe(id);
-        await sock.sendPresenceUpdate('composing', id);
-        
         await sock.sendMessage(id, { text: message });
-        
-        await sock.sendPresenceUpdate('paused', id);
-
         res.json({ status: 'success', message: 'Mensaje enviado correctamente' });
     } catch (error) {
         console.error('Error al enviar mensaje:', error);
@@ -93,6 +106,8 @@ app.get('/', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Servidor escuchando en puerto ${PORT}`);
-    connectToWhatsApp();
+    connectToWhatsApp().catch((error) => {
+        console.error('Error al iniciar la conexión con WhatsApp:', error);
+    });
 });
    
