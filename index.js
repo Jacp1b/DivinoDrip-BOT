@@ -62,7 +62,15 @@ app.post('/send-message', async (req, res) => {
     }
     try {
         const id = `${number}@s.whatsapp.net`;
+        
+        // Forzar el reenvío de claves de cifrado para evitar mensajes bloqueados
+        await sock.presenceSubscribe(id);
+        await sock.sendPresenceUpdate('composing', id);
+        
         await sock.sendMessage(id, { text: message });
+        
+        await sock.sendPresenceUpdate('paused', id);
+
         res.json({ status: 'success', message: 'Mensaje enviado correctamente' });
     } catch (error) {
         console.error('Error al enviar mensaje:', error);
