@@ -13,7 +13,15 @@ async function connectToWhatsApp() {
     
     const currentSocket = makeWASocket({
         auth: state,
-        printQRInTerminal: false // Desactivamos el QR visual
+        printQRInTerminal: false,
+        browser: ['Ubuntu', 'Chrome', '22.04.4'],
+        syncFullHistory: false,
+        markOnlineOnConnect: true,
+        generateHighQualityLinkPreview: false,
+        // Evita que los fallos de sesión de libsignal rompan el flujo
+        getMessage: async (key) => {
+            return { conversation: 'Mensaje automático Divino Drip' };
+        }
     });
     sock = currentSocket;
 
@@ -46,7 +54,7 @@ async function connectToWhatsApp() {
                 reconnectTimer = setTimeout(() => connectToWhatsApp(), 5000);
             }
         } else if (connection === 'open') {
-            console.log('¡Conectado exitosamente a WhatsApp con Baileys!');
+            console.log('¡Conectado exitosamente a WhatsApp com Baileys!');
             isWhatsAppConnected = true;
         }
     });
@@ -63,7 +71,7 @@ app.post('/send-message', async (req, res) => {
     try {
         const id = `${number}@s.whatsapp.net`;
         
-        // Forzar el reenvío de claves de cifrado para evitar mensajes bloqueados
+        // Simular presencia y asegurar sincronización de llaves E2EE para evitar cifrados
         await sock.presenceSubscribe(id);
         await sock.sendPresenceUpdate('composing', id);
         
@@ -87,5 +95,4 @@ app.listen(PORT, () => {
     console.log(`Servidor escuchando en puerto ${PORT}`);
     connectToWhatsApp();
 });
-
    
