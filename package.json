@@ -1,0 +1,17 @@
+{
+  "name": "divinodrip-bot",
+  "version": "1.0.0",
+  "description": "Bot de Baileys para notificaciones de WhatsApp en Divino Drip",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.12",
+    "express": "^4.19.2",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "engines": {
+    "node": ">=18.x"
+  }
+}
