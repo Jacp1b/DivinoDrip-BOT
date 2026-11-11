@@ -1,6 +1,5 @@
 const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const express = require('express');
-const qrcode = require('qrcode-terminal');
 
 const app = express();
 app.use(express.json());
@@ -12,17 +11,30 @@ async function connectToWhatsApp() {
     
     sock = makeWASocket({
         auth: state,
-        printQRInTerminal: true
+        printQRInTerminal: false // Desactivamos el QR visual
     });
 
     sock.ev.on('creds.update', saveCreds);
 
+    // Si la cuenta no está registrada aún, generamos el código de 8 dígitos
+    if (!sock.authState.creds.registered) {
+        // Escribe aquí tu número de WhatsApp con código de país (ejemplo Colombia: 57XXXXXXXXXX)
+        const phoneNumber = '573001234567'; 
+        
+        setTimeout(async () => {
+            try {
+                const code = await sock.requestPairingCode(phoneNumber);
+                console.log('==============================================');
+                console.log(`TU CÓDIGO DE VINCULACIÓN ES: ${code}`);
+                console.log('==============================================');
+            } catch (err) {
+                console.error('Error al solicitar código de vinculación:', err);
+            }
+        }, 3000);
+    }
+
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        if (qr) {
-            console.log('--- ESCANEA ESTE CÓDIGO QR EN LOS LOGS DE RENDER ---');
-            qrcode.generate(qr, { small: true });
-        }
+        const { connection, lastDisconnect } = update;
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
             console.log('Conexión cerrada. Reconectando:', shouldReconnect);
@@ -33,14 +45,11 @@ async function connectToWhatsApp() {
     });
 }
 
-// Endpoint para recibir las peticiones POST desde PHP (InfinityFree)
 app.post('/send-message', async (req, res) => {
     const { number, message } = req.body; 
-    
     if (!number || !message) {
-        return res.status(400).json({ status: 'error', error: 'Faltan parámetros: number o message' });
+        return res.status(400).json({ status: 'error', error: 'Faltan parámetros' });
     }
-
     try {
         const id = `${number}@s.whatsapp.net`;
         await sock.sendMessage(id, { text: message });
@@ -50,13 +59,12 @@ app.post('/send-message', async (req, res) => {
     }
 });
 
-// Ruta de estado para verificar que el servicio web está activo
 app.get('/', (req, res) => {
-    res.send('Bot de Baileys activo y funcionando para Divino Drip');
+    res.send('Bot de Baileys activo para Divino Drip');
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`Servidor escuchando en el puerto ${PORT}`);
+    console.log(`Servidor escuchando en puerto ${PORT}`);
     connectToWhatsApp();
 });
